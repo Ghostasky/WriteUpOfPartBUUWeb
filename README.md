@@ -2,7 +2,7 @@
 
 
 
-
+[toc]
 
 此项目用来记录buuoj上的一些web题解，目录分类来源：https://github.com/Aaisui/BUUWEB
 

